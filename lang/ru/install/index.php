@@ -1,6 +1,5 @@
 <?
-	$MESS["bedrosova.ymlimport_MODULE_NAME"] = "»ÏÔÓÚ YML-Ù‡ÈÎ‡";
-	$MESS["bedrosova.ymlimport_MODULE_DESC"] = "ÃÓ‰ÛÎ¸ ÔÓÁ‚ÓÎˇÂÚ ËÏÔÓÚËÓ‚‡Ú¸ ÚÓ‚‡˚ ËÁ Ù‡ÈÎÓ‚ ÙÓÏ‡Ú‡ YML";
-	$MESS["bedrosova.ymlimport_PARTNER_NAME"] = "»œ ¡Â‰ÓÒÓ‚‡";
-	$MESS["bedrosova.ymlimport_PARTNER_URI"] = "http://www.bedrosova.ru";
-?>
+$MESS["bedrosova.ymlimport_MODULE_NAME"] = "–ò–º–ø–æ—Ä—Ç YML-—Ñ–∞–π–ª–∞";
+$MESS["bedrosova.ymlimport_MODULE_DESC"] = "–ú–æ–¥—É–ª—å –ø–æ–∑–≤–æ–ª—è–µ—Ç –∏–º–ø–æ—Ä—Ç–∏—Ä–æ–≤–∞—Ç—å —Ç–æ–≤–∞—Ä—ã –∏–∑ —Ñ–∞–π–ª–æ–≤ —Ñ–æ—Ä–º–∞—Ç–∞ YML";
+$MESS["bedrosova.ymlimport_PARTNER_NAME"] = "–ò–ü –ë–µ–¥—Ä–æ—Å–æ–≤–∞";
+$MESS["bedrosova.ymlimport_PARTNER_URI"] = "http://www.bedrosova.ru";

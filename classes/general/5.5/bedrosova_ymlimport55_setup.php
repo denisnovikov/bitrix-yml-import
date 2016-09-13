@@ -21,8 +21,7 @@ $CAT_FILTER_I;
 $counter =1;
 
 $arSetupErrors = array();
-if ($STEP <= 1)
-{
+if ($STEP <= 1) {
 	if (isset($arOldSetupVars['IBLOCK_ID']))
 		$IBLOCK_ID = $arOldSetupVars['IBLOCK_ID'];
 	if (isset($arOldSetupVars['DATA_FILE_NAME']))
@@ -47,33 +46,42 @@ if ($STEP <= 1)
 		$ID_SECTION = $arOldSetupVars['ID_SECTION'];
 		
 	
-if (isset($arOldSetupVars['CAT_FILTER_I']))
-		$CAT_FILTER_I= $arOldSetupVars['CAT_FILTER_I'];	
-		
-if (isset($arOldSetupVars['price_modifier']))
-		$price_modifier = $arOldSetupVars['price_modifier'];	
-		
-		
-if (isset($arOldSetupVars['price_modifier']))
-		$price_modifier = $arOldSetupVars['price_modifier'];	
-if (isset($arOldSetupVars['OPTION_ENCODING']))
-		$OPTION_ENCODING = $arOldSetupVars['OPTION_ENCODING'];	
-else  $OPTION_ENCODING="N";
-if (isset($arOldSetupVars['fromfile']))
-		$fromfile = $arOldSetupVars['fromfile'];	
-if (isset($arOldSetupVars['toiblock']))
-		$toiblock= $arOldSetupVars['toiblock'];	
-		
-		
-		
+	if (isset($arOldSetupVars['CAT_FILTER_I']))
+			$CAT_FILTER_I= $arOldSetupVars['CAT_FILTER_I'];	
+			
+	if (isset($arOldSetupVars['price_modifier']))
+			$price_modifier = $arOldSetupVars['price_modifier'];	
+			
+			
+	if (isset($arOldSetupVars['price_modifier']))
+			$price_modifier = $arOldSetupVars['price_modifier'];	
+	if (isset($arOldSetupVars['OPTION_ENCODING']))
+			$OPTION_ENCODING = $arOldSetupVars['OPTION_ENCODING'];	
+	else  $OPTION_ENCODING="N";
+	if (isset($arOldSetupVars['fromfile']))
+			$fromfile = $arOldSetupVars['fromfile'];	
+	if (isset($arOldSetupVars['toiblock']))
+			$toiblock= $arOldSetupVars['toiblock'];
+	$IS_IN_ONE_PROP = (isset($arOldSetupVars['IS_IN_ONE_PROP'])) ? $arOldSetupVars['IS_IN_ONE_PROP'] : 'N';
+	$ONE_PROP_CODE = (isset($arOldSetupVars['ONE_PROP_CODE']) && !empty($arOldSetupVars['ONE_PROP_CODE'])) ? $arOldSetupVars['ONE_PROP_CODE'] : 'CML2_ATTRIBUTES';
+	$DIFF_PROP_CODE_PREFIX = (isset($arOldSetupVars['DIFF_PROP_CODE_PREFIX']) && !empty($arOldSetupVars['DIFF_PROP_CODE_PREFIX'])) ? $arOldSetupVars['DIFF_PROP_CODE_PREFIX'] : 'YML_';
+
+	if (isset($arOldSetupVars['arSTORES']) && !empty($arOldSetupVars['arSTORES'])) {
+		$arSelStores = $arOldSetupVars['arSTORES'];
+		$keyNoStore = array_search('NOT_REF', $arSelStores);
+		if (false !== $keyNoStore) {
+			unset($arSelStores[$keyNoStore]); // РћСЃС‚Р°СЋС‚СЃСЏ С‚РѕР»СЊРєРѕ РєРѕРґС‹ РІС‹Р±СЂР°РЅРЅС‹С… СЃРєР»Р°РґРѕРІ
+		}
+	}
+
 }
 
 
 
-// проверка перехода ко 2 вкладке
+// РїСЂРѕРІРµСЂРєР° РїРµСЂРµС…РѕРґР° РєРѕ 2 РІРєР»Р°РґРєРµ
 if ($STEP >1)
 {
-	// должен быть файл
+	// РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ С„Р°Р№Р»
 	if (strlen($URL_DATA_FILE) > 0 && file_exists($_SERVER["DOCUMENT_ROOT"].$URL_DATA_FILE) && is_file($_SERVER["DOCUMENT_ROOT"].$URL_DATA_FILE) && $APPLICATION->GetFileAccessPermission($URL_DATA_FILE)>="R")
 		$DATA_FILE_NAME = $URL_DATA_FILE;
 
@@ -84,7 +92,7 @@ if ($STEP >1)
 	$IBLOCK_ID = IntVal($IBLOCK_ID);
 	$arIBlock = array();
 	
-	// не выбран инфоблок
+	// РЅРµ РІС‹Р±СЂР°РЅ РёРЅС„РѕР±Р»РѕРє
 	if ($IBLOCK_ID <= 0)
 	{
 		$arSetupErrors[] = GetMessage("CATI_NO_IBLOCK");
@@ -105,10 +113,10 @@ if ($STEP >1)
 	if (CCatalog::GetByID($IBLOCK_ID))
 		$bIBlockIsCatalog = True;
 	
-	// не должно быть ошибок
+	// РЅРµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РѕС€РёР±РѕРє
 	if (!empty($arSetupErrors))
 	{
-		// иначе остаемсЯ на месте
+		// РёРЅР°С‡Рµ РѕСЃС‚Р°РµРјСЃРЇ РЅР° РјРµСЃС‚Рµ
 		$STEP = 1;
 	}
 }
@@ -185,9 +193,7 @@ CAdminFileDialog::ShowScript(
 	
 
 	<tr class="heading">
-	<td colspan="2" align="center">
-		<? echo GetMessage("CAT_IMPORT_SET"); ?>
-	</td>
+		<td colspan="2" align="center"><?=GetMessage("CAT_IMPORT_SET");?></td>
 	</tr>
 	<tr>
 		<td valign="top" width="40%"><label for="IMPORT_CATEGORY"><? echo GetMessage("CAT_IMPORT"); ?></label>:</td>
@@ -196,7 +202,7 @@ CAdminFileDialog::ShowScript(
 			<input type="checkbox" name="IMPORT_CATEGORY" id="IMPORT_CATEGORY_Y" value="Y" <? echo (isset($IMPORT_CATEGORY) && 'Y' == $IMPORT_CATEGORY ? "checked": ""); ?>>
 		</td>
 	</tr>
-	
+
 	<tr>
 		<td valign="top" width="40%"><label for="IMPORT_CATEGORY"><? echo GetMessage("CAT_IMPORT_SECTION"); ?></label>:</td>
 		<td valign="top" width="60%">
@@ -248,12 +254,8 @@ CAdminFileDialog::ShowScript(
 			<small><?echo GetMessage("CATI_AUTO_STEP_TIME_NOTE");?></small>
 		</td>
 	</tr>
-	
 
-		
-	
-	</tr>
-		<tr class="heading">
+	<tr class="heading">
 		<td colspan="2" align="center">
 			<? echo GetMessage("OPTIONS"); ?>
 		</td>
@@ -275,71 +277,97 @@ CAdminFileDialog::ShowScript(
 			</select>
 		</td>
 	</tr>
-	
-	</tr>
-		<tr class="heading">
-		<td  align="center" colspan="2" >
-			<? echo GetMessage("PROPERTY_MAP"); ?>
+
+	<tr>
+		<td valign="top" width="40%">
+			<?=GetMessage("PROP_LABEL_ALL_IN_ONE_PROP");?>
 		</td>
-		</tr>
-					<tr>
-						<td colspan="2" align="center">
-							<div id="associations">
-							<?if (is_array($fromfile)){
-								foreach ($fromfile as $key=>$val){
-								$inn=$key+1;
-							?>
-									<div id="association"><? echo GetMessage("IN_FILE"); ?>: <input type="text" name="fromfile[]" id="from<?=$key?>" size="20" value="<?=$val?>" > <? echo GetMessage("IN_IBLOCK"); ?>: <input type="text" name="toiblock[]" id="to<?=$key?>" size="20" value="<?=$toiblock[$key]?>" ><br/><br/></div>
-							<?
-								}
-							}else{
-							$inn=1;
-							?>
-								<div id="association"><? echo GetMessage("IN_FILE"); ?>: <input type="text" name="fromfile[]" id="from0" size="20" value="" > <? echo GetMessage("IN_IBLOCK"); ?>: <input type="text" name="toiblock[]" id="to0" size="20" value="" ><br/><br/></div>
-							<?}?>
-							</div>
-							
-							<br>
-							<input type="Button" id="add_property_btn" value="<? echo GetMessage("ADD_PROPERTY_MAP");?>" onclick="AddRekvMore(1);"></td>
-						</td>
-						
-					
-					</tr>
+		<td valign="top" width="60%">
+			<input
+				type="radio"
+				name="IS_IN_ONE_PROP"
+				id="IS_IN_ONE_PROP"
+				value="Y" <? echo (isset($IS_IN_ONE_PROP) && 'Y' == $IS_IN_ONE_PROP ? "checked": ""); ?>
+				onchange="setTypeProp('one')"
+			>
+		</td>	
+	</tr>
+	<tr>
+		<td valign="top" width="40%"><label for="ONE_PROP_CODE"><?=GetMessage("PROP_INPUT_ALL_IN_ONE_PROP");?></label>:</td>
+		<td valign="top" width="60%">
+			<input
+				type="text"
+				name="ONE_PROP_CODE"
+				id="ONE_PROP_CODE"
+				value="<?=$ONE_PROP_CODE;?>"
+				size="50"
+				<? if (isset($IS_IN_ONE_PROP) && 'N' == $IS_IN_ONE_PROP) echo 'disabled'; ?>
+			>
+		</td>
+	</tr>
+	<tr>
+		<td valign="top" width="40%">
+			<?=GetMessage("PROP_LABEL_ALL_IN_DIFF_PROP");?>
+		</td>
+		<td valign="top" width="60%">
+			<input
+				type="radio"
+				name="IS_IN_ONE_PROP"
+				id="IS_IN_DIFF_PROP"
+				value="N" <? echo (isset($IS_IN_ONE_PROP) && 'Y' != $IS_IN_ONE_PROP ? "checked": ""); ?>
+				onchange="setTypeProp('diff')"
+			>
+		</td>	
+	</tr>
+	<tr>
+		<td valign="top" width="40%"><label for="DIFF_PROP_CODE_PREFIX"><?=GetMessage("PROP_INPUT_ALL_IN_DIFF_PROP");?></label>:</td>
+		<td valign="top" width="60%">
+			<input
+				type="text"
+				name="DIFF_PROP_CODE_PREFIX"
+				id="DIFF_PROP_CODE_PREFIX"
+				value="<?=$DIFF_PROP_CODE_PREFIX;?>"
+				size="20"
+				<? if (isset($IS_IN_ONE_PROP) && 'Y' == $IS_IN_ONE_PROP) echo 'disabled'; ?>
+			>
+		</td>
+	</tr>
+	<tr>
+		<td valign="top" width="40%"><?=GetMessage("SELECT_STORE_LABEL");?>:</td>
+		<td valign="top" width="60%">
+			<?
+			$arOptions = CYmlImport::getStoresForSelect();
+			$isNoStores = (empty($arSelStores)) ? true : false;
+			echo SelectBoxMFromArray(
+				"arSTORES[]",
+				$arOptions,
+				$arSelStores,
+				GetMessage("SELECT_NO_STORE_OPTION"),
+				$isNoStores,
+				4
+			);
+			?>
+		</td>
+	</tr>
 
 	<script>
-
-var inn=<?=$inn?>;
-function AddRekvMore(ind)
-{
-	
-
-
-	
-	var toClone = document.getElementById("association");
-	var clonedNode = toClone.cloneNode(3);
-	var insertPoint = document.getElementById('associations');
-	var NewDiv=insertPoint.appendChild(clonedNode);
-	NewDiv.setAttribute("id", "association"+inn);
-	
-	var inn2=inn-1;
-	var inputT = document.getElementById("from"+inn2);
-	
-	inputT.setAttribute("id", "from"+inn);
-
-	
-	var intu = document.getElementById("to"+inn2);
-	intu.setAttribute("id", "to"+inn);
-	
-	
-	inn++;
-
-
-}
-
+		function setTypeProp(type) {
+			var isOneProp = true;
+			if (type == 'one') {
+				isOneProp = true;
+			} else if (type == 'diff') {
+				isOneProp = false;
+			}
+			if (isOneProp) {
+				document.getElementById("DIFF_PROP_CODE_PREFIX").setAttribute("disabled", true);
+				document.getElementById("ONE_PROP_CODE").disabled = false;
+			} else {
+				document.getElementById("DIFF_PROP_CODE_PREFIX").disabled = false;
+				document.getElementById("ONE_PROP_CODE").setAttribute("disabled", true);
+			}
+		}
 	</script>
-	
-	
-	
+
 
     <? if ($ACTION != "IMPORT")
     {
@@ -391,16 +419,14 @@ if ($ACTION == 'IMPORT_EDIT' || $ACTION == 'IMPORT_COPY')
 }
 
 
-
-if ($STEP < 2)
-{
+if ($STEP < 2) {
 
 	?>    <input type="hidden" name="STEP" value="<?echo intval($STEP) + 1;?>">
     <input type="hidden" name="lang" value="<?echo LANGUAGE_ID; ?>">
     <input type="hidden" name="ACT_FILE" value="<?echo htmlspecialcharsbx($_REQUEST["ACT_FILE"]) ?>">
     <input type="hidden" name="ACTION" value="<?echo htmlspecialcharsbx($ACTION) ?>">
 
-    <input type="hidden" name="SETUP_FIELDS_LIST" value="DATA_FILE_NAME, IBLOCK_ID, IMPORT_CATEGORY, ONLY_PRICE, max_execution_time, IMPORT_CATEGORY_SECTION, URL_DATA_FILE2, ID_SECTION, CAT_FILTER_I, price_modifier,toiblock,fromfile,OPTION_ENCODING">
+    <input type="hidden" name="SETUP_FIELDS_LIST" value="DATA_FILE_NAME, IBLOCK_ID, IMPORT_CATEGORY, ONLY_PRICE, max_execution_time, IMPORT_CATEGORY_SECTION, URL_DATA_FILE2, ID_SECTION, CAT_FILTER_I, price_modifier,toiblock,fromfile,OPTION_ENCODING, IS_IN_ONE_PROP, ONE_PROP_CODE, DIFF_PROP_CODE_PREFIX, arSTORES">
 
     <input type="submit" value="<? echo ($ACTION=="IMPORT")?GetMessage("CICML_NEXT_STEP_F")." &gt;&gt;":GetMessage("CET_SAVE"); ?>" name="submit_btn"><?
 }

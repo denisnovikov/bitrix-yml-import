@@ -6,16 +6,13 @@ require_once ($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/bedrosova.ymlimport/cla
 
 $ymlimport = new CYmlImport();
 
-$strImportErrorMessage = $ymlimport->ImportYML($DATA_FILE_NAME, $IBLOCK_ID, $IMPORT_CATEGORY, $ONLY_PRICE, $max_execution_time, $CUR_FILE_POS, $IMPORT_CATEGORY_SECTION, $URL_DATA_FILE2, $ID_SECTION, $CAT_FILTER_I, $price_modifier,$OPTION_ENCODING);
+$strImportErrorMessage = $ymlimport->ImportYML($DATA_FILE_NAME, $IBLOCK_ID, $IMPORT_CATEGORY, $ONLY_PRICE, $max_execution_time, $CUR_FILE_POS, $IMPORT_CATEGORY_SECTION, $URL_DATA_FILE2, $ID_SECTION, $CAT_FILTER_I, $price_modifier,$OPTION_ENCODING, $IS_IN_ONE_PROP, $ONE_PROP_CODE, $DIFF_PROP_CODE_PREFIX, $arSTORES);
 
 
-if (!$ymlimport->AllLinesLoaded)
-{
-    $SETUP_VARS_LIST = "DATA_FILE_NAME, IBLOCK_ID, IMPORT_CATEGORY, ONLY_PRICE, max_execution_time, CUR_FILE_POS, IMPORT_CATEGORY_SECTION, URL_DATA_FILE2, ID_SECTION, CAT_FILTER_I, price_modifier, OPTION_ENCODING";
+if (!$ymlimport->AllLinesLoaded) {
+    $SETUP_VARS_LIST = "DATA_FILE_NAME, IBLOCK_ID, IMPORT_CATEGORY, ONLY_PRICE, max_execution_time, CUR_FILE_POS, IMPORT_CATEGORY_SECTION, URL_DATA_FILE2, ID_SECTION, CAT_FILTER_I, price_modifier, OPTION_ENCODING, IS_IN_ONE_PROP, ONE_PROP_CODE, DIFF_PROP_CODE_PREFIX, arSTORES";
     
     $CUR_FILE_POS = $ymlimport->FILE_POS;
     $bAllDataLoaded = false; 
     
 }
-
-?>
