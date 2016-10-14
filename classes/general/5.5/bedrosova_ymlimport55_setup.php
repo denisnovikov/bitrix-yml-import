@@ -64,7 +64,7 @@ if ($STEP <= 1) {
 			$toiblock= $arOldSetupVars['toiblock'];
 	$IS_IN_ONE_PROP = (isset($arOldSetupVars['IS_IN_ONE_PROP'])) ? $arOldSetupVars['IS_IN_ONE_PROP'] : 'N';
 	$ONE_PROP_CODE = (isset($arOldSetupVars['ONE_PROP_CODE']) && !empty($arOldSetupVars['ONE_PROP_CODE'])) ? $arOldSetupVars['ONE_PROP_CODE'] : 'CML2_ATTRIBUTES';
-	$DIFF_PROP_CODE_PREFIX = (isset($arOldSetupVars['DIFF_PROP_CODE_PREFIX']) && !empty($arOldSetupVars['DIFF_PROP_CODE_PREFIX'])) ? $arOldSetupVars['DIFF_PROP_CODE_PREFIX'] : 'YML_';
+	$DIFF_PROP_CODE_PREFIX = (isset($arOldSetupVars['DIFF_PROP_CODE_PREFIX'])) ? $arOldSetupVars['DIFF_PROP_CODE_PREFIX'] : 'YML_';
 
 	if (isset($arOldSetupVars['arSTORES']) && !empty($arOldSetupVars['arSTORES'])) {
 		$arSelStores = $arOldSetupVars['arSTORES'];

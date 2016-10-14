@@ -1,4 +1,8 @@
-<?IncludeModuleLangFile($_SERVER['DOCUMENT_ROOT'].'/bitrix/modules/bedrosova.ymlimport/import_setup_templ.php');
+<?
+ini_set('max_execution_time', 9600);
+ini_set('memory_limit', '1024M');
+set_time_limit(9600);
+IncludeModuleLangFile($_SERVER['DOCUMENT_ROOT'].'/bitrix/modules/bedrosova.ymlimport/import_setup_templ.php');
 
 global $USER;
 global $APPLICATION;
@@ -25,9 +29,11 @@ class CYmlImport
 
     protected $arYmlCatalogProps = array();
     protected $isAllPropValsInOneProp = false; // Хранить ли все свойства товара в одном свойстве инфоблока
-    protected $ymlPropPrefix = 'YML_'; // Префикс для колов импортируемых свойств
+    protected $ymlPropPrefix = 'YML_'; // Префикс для кодов импортируемых свойств и разделов товаров
     protected $iblockId;
     protected $isNeedStores = false; // Нужно ли сохранять количество товаров в складах
+    protected $optEncode = 'N'; // Нужно ли менять кодировку и с какой на какую
+    protected $isLoadPics = true; // Нужно ли загружать картинки
 
     var $bTmpUserCreated = false;
     var $strImportErrorMessage = "";
@@ -56,6 +62,18 @@ class CYmlImport
     }
 
 
+    /**
+     * Получает содержимое файла в UTF-8 кодировке
+     * @param  string $fn Путь к файлу
+     * @return string Содержимое файла в UTF-8 кодировке
+     */
+    /*public function file_get_contents_utf8($fn) {
+        $content = file_get_contents($fn);
+        AddMessage2Log("Определена кодировка: " . print_r(mb_detect_encoding($content, 'Windows-1251, UTF-8', true), true));
+        return mb_convert_encoding($content, 'UTF-8', mb_detect_encoding($content, 'Windows-1251, UTF-8', true));
+    }*/
+
+
     // получаем xml-объект
     // смысл в том, что нельзя определить кодировку файла. всегда определяется utf-8
     // поэтому открываем файл как есть, если он объект создается - хорошо
@@ -64,18 +82,20 @@ class CYmlImport
     function GetXMLObject($FilePath)
     {
         // содержимое
-        $file_content = file_get_contents ($FilePath);
+        $file_content = file_get_contents($FilePath);
+        //$file_content = $this->file_get_contents_utf8($FilePath);
 
         // пытаемся получить объект
-        $xml =  simplexml_load_string($file_content);
-        if (!is_object($xml->shop))
-        {
+        $xml = simplexml_load_string($file_content);
+        if (!is_object($xml->shop)) {
+            AddMessage2Log("Ошибка загрузки XML-файла");
+            return false;
             //не могу создать объект
-            $file_content = iconv("windows-1251", "utf-8", $file_content);
+            //$file_content = iconv("windows-1251", "utf-8", $file_content);
 
             // кодировка произведена
             // еще разик
-            $xml =  simplexml_load_string($file_content);
+            //$xml =  simplexml_load_string($file_content);
         }
 
         return $xml;
@@ -96,6 +116,9 @@ class CYmlImport
             $USER = new CUser();
         }
 
+        /*if (isset($OPTION_ENCODING) && $OPTION_ENCODING != 'N') {
+            $this->optEncode = trim(strval($OPTION_ENCODING));
+        }*/
 
         if ($max_execution_time <= 0)
             $max_execution_time = 0;
@@ -132,10 +155,12 @@ class CYmlImport
             }
         }
 
+        $CUR_FILE_POS = isset($CUR_FILE_POS) ? $CUR_FILE_POS : 0;
+
         if (isset($IS_IN_ONE_PROP) && $IS_IN_ONE_PROP == 'Y') {
             $this->isAllPropValsInOneProp = true;
         } else {
-            $this->ymlPropPrefix = (isset($DIFF_PROP_CODE_PREFIX) && !empty($DIFF_PROP_CODE_PREFIX)) ? $DIFF_PROP_CODE_PREFIX : 'YML_';
+            $this->ymlPropPrefix = (isset($DIFF_PROP_CODE_PREFIX)) ? $DIFF_PROP_CODE_PREFIX : 'YML_';
         }
 
         if (isset($arSTORES) && is_array($arSTORES) && count($arSTORES) == 1 && $arSTORES[0] == 'NOT_REF') {
@@ -150,67 +175,73 @@ class CYmlImport
         }
 
 
-        if (strlen($strImportErrorMessage) <= 0) {
-            $bIBlockIsCatalog = false;
-            if (CCatalog::GetByID($IBLOCK_ID))
-                $bIBlockIsCatalog = true;
-
-            //Здесь начинаем загрузку xml файла
-
-            if (file_exists($_SERVER["DOCUMENT_ROOT"].$DATA_FILE_NAME)) {
-                $xml = $this->GetXMLObject($_SERVER["DOCUMENT_ROOT"] . $DATA_FILE_NAME);
-            } else {
-				$uf = file_get_contents($URL_DATA_FILE2);
-				file_put_contents($_SERVER["DOCUMENT_ROOT"] . "/upload/file_for_import.xml", $uf);
-				$handle = fopen($_SERVER["DOCUMENT_ROOT"] . "/upload/file_for_import.xml", 'w+');
-				fwrite($handle, $uf);
-				fclose($handle);
-				$DATA_FILE_NAME = "/upload/file_for_import.xml";
-				$xml = $this->GetXMLObject($_SERVER["DOCUMENT_ROOT"] . $DATA_FILE_NAME);
-			}
-
-            if (!is_object($xml->shop)) {
-                $strImportErrorMessage .= GetMessage("CICML_INVALID_FILE") . "<br>";
+        if (empty($strImportErrorMessage)) {
+            // Проверим, существует ли целевой инфоблок и доступен ли он для записи
+            $ib = new CIBlock;
+            $res = CIBlock::GetList(
+                array(),
+                array(
+                    'ID'                => $IBLOCK_ID,
+                    'ACTIVE'            => 'Y',
+                    'CHECK_PERMISSIONS' => 'N',
+                    //'MIN_PERMISSION'    => 'W'
+                )
+            );
+            if (!$ar_res = $res->Fetch()) {
+                $strImportErrorMessage .= GetMessage(
+                    "IMPORT_ERROR_IBLOCK_NOT_AVAILABLE",
+                    array(
+                        '#IBLOCK_ID#' => $IBLOCK_ID,
+                        '#BITRIX_ERROR#' => $res->LAST_ERROR,
+                    )
+                ) . PHP_EOL;
             }
-
         }
 
-        if (strlen($strImportErrorMessage) <= 0) {
-			set_time_limit(0);
+        if (empty($strImportErrorMessage)) {
+            //Здесь начинаем загрузку xml файла
+
+            if (file_exists($_SERVER["DOCUMENT_ROOT"] . $DATA_FILE_NAME)) {
+                $xml = $this->GetXMLObject($_SERVER["DOCUMENT_ROOT"] . $DATA_FILE_NAME);
+            } else {
+                $uf = file_get_contents($URL_DATA_FILE2);
+                file_put_contents($_SERVER["DOCUMENT_ROOT"] . "/upload/file_for_import.xml", $uf);
+                $handle = fopen($_SERVER["DOCUMENT_ROOT"] . "/upload/file_for_import.xml", 'w+');
+                fwrite($handle, $uf);
+                fclose($handle);
+                $DATA_FILE_NAME = "/upload/file_for_import.xml";
+                $xml = $this->GetXMLObject($_SERVER["DOCUMENT_ROOT"] . $DATA_FILE_NAME);
+            }
+
+            if (!is_object($xml->shop)) {
+                $strImportErrorMessage .= GetMessage("CICML_INVALID_FILE") . PHP_EOL;
+            }
+        }
+
+        if (empty($strImportErrorMessage)) {
+			if (!set_time_limit(0)) {
+                AddMessage2Log("Время выполнения скрипта ограничено настройками PHP и не может быть изменено из скрипта!");
+            }
 
             if ($this->isAllPropValsInOneProp) {
                 $ONE_PROP_CODE = (empty($ONE_PROP_CODE)) ? 'CML2_ATTRIBUTES' : $ONE_PROP_CODE;
     			//Проверим существует ли свойство CML2_ATTRIBUTES и если не сущестует, создадим его
-    			$properties = CIBlockProperty::GetList(
-                    array(
-                        "sort" => "asc",
-                        "name" => "asc"
-                    ),
-                    array(
-                        "ACTIVE" => "Y",
-                        "IBLOCK_ID" => $IBLOCK_ID,
-                        "CODE" => $ONE_PROP_CODE
-                    )
-                );
-    			if (!$properties->GetNext()) {
-    				$arNewPropFields = array(
-    					"NAME"             => GetMessage("CML2_ATTRIBUTES"),
-    					"ACTIVE"           => "Y",
-    					"SORT"             => "100",
-    					"CODE"             => $ONE_PROP_CODE,
-    					"PROPERTY_TYPE"    => "S",
-    					"MULTIPLE"         => 'Y',
-    					"WITH_DESCRIPTION" => 'Y',
-    					"IBLOCK_ID"        => $IBLOCK_ID,
-    					'SMART_FILTER'     => 'Y', 
-    				);
-    								  
-    				$Newibp = new CIBlockProperty;
-    								
-    				if (!$NewPropID = $Newibp->Add($arNewPropFields)) {
-                        AddMessage2Log("Error create property $ONE_PROP_CODE");
-                    }
-    			}
+    			$arNewPropFields = array(
+					"NAME"             => GetMessage("CML2_ATTRIBUTES"),
+					"ACTIVE"           => "Y",
+					"SORT"             => "100",
+					"CODE"             => $ONE_PROP_CODE,
+					"PROPERTY_TYPE"    => "S",
+					"MULTIPLE"         => 'Y',
+					"WITH_DESCRIPTION" => 'Y',
+					"IBLOCK_ID"        => $IBLOCK_ID,
+					'SMART_FILTER'     => 'Y', 
+				);
+    			if (!$NewPropID = $this->getIblockPropId($ONE_PROP_CODE, $IBLOCK_ID, $arNewPropFields)) {
+                    $errorMsg = GetMessage("IMPORT_ERROR_CREATE_PROP", array('#PROP_CODE#' => $ONE_PROP_CODE));
+                    $strImportErrorMessage .= $errorMsg . PHP_EOL;
+                    AddMessage2Log($errorMsg);
+                }
             }
 
             $arPriceType = array();
@@ -225,32 +256,38 @@ class CYmlImport
                 $CategiriesList = $xml->shop->categories->category;
 
                 foreach ($CategiriesList as $Categoria) {
-
-                    $CATEGORIA_XML_ID = 'yml_' . $Categoria['id'];
+                    $CATEGORIA_XML_ID = $this->ymlPropPrefix . $Categoria['id'];
 
     				if ($IMPORT_CATEGORY_SECTION == 'Y') {
-    			
-    					$CATEGORIA_PARENT_XML_ID = $Categoria['parentId'] ? 'yml_' . $Categoria['parentId'] : $ID_SECTION;
-    			
+    					$CATEGORIA_PARENT_XML_ID = $Categoria['parentId'] ? $this->ymlPropPrefix . $Categoria['parentId'] : $ID_SECTION;
     				} else {
-    					$CATEGORIA_PARENT_XML_ID = $Categoria['parentId'] ? 'yml_' . $Categoria['parentId'] : 0;// Если родитель не указан - пусть категория идёт в корень
+    					$CATEGORIA_PARENT_XML_ID = $Categoria['parentId'] ? $this->ymlPropPrefix . $Categoria['parentId'] : 0;// Если родитель не указан - пусть категория идёт в корень
     				}
 
-                    $CATEGORIA_NAME = yml_iconv($Categoria, $OPTION_ENCODING);
+                    $CATEGORIA_NAME = yml_iconv((string) $Categoria, $this->optEncode);
+                    //$CATEGORIA_NAME = (string) $Categoria;
+
+                    $section_code = $this->getTranslit(trim($CATEGORIA_NAME), 'U');
+                    if (preg_match('/^[0-9]/', $section_code)) {
+                        $section_code = '_' . $section_code;
+                    }
+                    $section_code = $this->ymlPropPrefix . $section_code;
 
                     // Ищем, существует ли такая категория на сайте
-
-                    $find_section_res = CIBlockSection::GetList(
+                    $arFilter = array(
+                        "IBLOCK_ID" => $IBLOCK_ID,
+                        "XML_ID"    => $CATEGORIA_XML_ID
+                    );
+                    //AddMessage2Log("Фильтр поиска раздела: " . print_r($arFilter, true));
+                    $rsSections = CIBlockSection::GetList(
                         array(),
-                        array(
-                            "IBLOCK_ID" => $IBLOCK_ID,
-                            "XML_ID" => $CATEGORIA_XML_ID
-                        ),
+                        $arFilter,
                         false,
                         array("ID"),
                         false
                     );
-                    if ($find_section_res2 = $find_section_res->GetNext()) {
+                    if ($find_section_res2 = $rsSections->GetNext()) {
+                        AddMessage2Log("Категория XML_ID=" . $CATEGORIA_XML_ID . "; NAME=" . $CATEGORIA_NAME . " уже есть.");
                         $ResCatArr[$CATEGORIA_XML_ID] = $find_section_res2["ID"];
 
     					if ($ResCatArr[$CATEGORIA_XML_ID] == 0 && $IMPORT_CATEGORY_SECTION == 'Y') {
@@ -264,29 +301,31 @@ class CYmlImport
                             "NAME"              => $CATEGORIA_NAME,
                             "IBLOCK_SECTION_ID" => $ResCatArr[$CATEGORIA_PARENT_XML_ID],
                             "XML_ID"            => $CATEGORIA_XML_ID,
-                            //  "CODE"=>$section_code,
+                            "CODE"              => $section_code,
                         );
 
                         if ($IMPORT_CATEGORY == 'Y') {
-                            $bs->Update($find_section_res2["ID"], $arFields);
+                            $resUpdSection = $bs->Update($find_section_res2["ID"], $arFields);
+                            if (!$resUpdSection) {
+                                $errorMsg = GetMessage(
+                                    "IMPORT_ERROR_UPDATE_SECTION",
+                                    array(
+                                        '#SECTION_NAME#' => $CATEGORIA_NAME,
+                                        '#SECTION_XML_ID#' => $CATEGORIA_XML_ID,
+                                        '#BITRIX_ERROR#' => $bs->LAST_ERROR
+                                    )
+                                );
+                                $strImportErrorMessage .= $errorMsg . PHP_EOL;
+                                AddMessage2Log($errorMsg);
+                            }
                         }
                     } else { // Такой категории товаров не нашлось
+                        AddMessage2Log("Категории XML_ID=" . $CATEGORIA_XML_ID . "; NAME=" . $CATEGORIA_NAME . " пока нет.");
                         //Добавляю
     					
     					if ($ResCatArr[$CATEGORIA_PARENT_XML_ID] == 0 && $IMPORT_CATEGORY_SECTION == 'Y') {
     						$ResCatArr[$CATEGORIA_PARENT_XML_ID] = $ID_SECTION;
     					}
-
-                        $section_code = CUtil::translit($CATEGORIA_NAME, LANGUAGE_ID, array(
-                            "max_len" => 50,
-                            "change_case" => 'U', // 'L' - toLower, 'U' - toUpper, false - do not change
-                            "replace_space" => '_',
-                            "replace_other" => '_',
-                            "delete_repeat_replace" => true,
-                        ));
-                        if (preg_match('/^[0-9]/', $section_code)) {
-                            $section_code = '_' . $section_code;
-                        }
 
                         $bs = new CIBlockSection;
                         $arFields = array(
@@ -295,133 +334,169 @@ class CYmlImport
                             "NAME"              => $CATEGORIA_NAME,
                             "IBLOCK_SECTION_ID" => $ResCatArr[$CATEGORIA_PARENT_XML_ID],
                             "XML_ID"            => $CATEGORIA_XML_ID,
-                            "CODE"              => 'yml_' . $section_code,
+                            "CODE"              => $section_code,
                         );
 
                         if ($IMPORT_CATEGORY == 'Y') {
+                            AddMessage2Log("Добавляем категорию: " . print_r($arFields, true));
                             $ResCatArr[$CATEGORIA_XML_ID] = $bs->Add($arFields);
 
                             if(!$ResCatArr[$CATEGORIA_XML_ID]) {
-                                AddMessage2Log("Error create category \"" . $CATEGORIA_NAME . "\"");
-                                echo $bs->LAST_ERROR;
+                                $errorMsg = GetMessage(
+                                    "IMPORT_ERROR_CREATE_SECTION",
+                                    array(
+                                        '#SECTION_NAME#' => $CATEGORIA_NAME,
+                                        '#SECTION_XML_ID#' => $CATEGORIA_XML_ID,
+                                        '#BITRIX_ERROR#' => $bs->LAST_ERROR
+                                    )
+                                );
+                                $strImportErrorMessage .= $errorMsg . PHP_EOL;
+                                AddMessage2Log($errorMsg);
                             }
                         }
                     }
                 } // Конец обработки всех категорий товаров
             }
 
+            // Начинаем обработку товаров
+            // Сначала получим все существующие свойства инфоблока, полученные ранее из импорта YML
+            $this->arYmlCatalogProps = $this->getCatalogProps($IBLOCK_ID, true);
 
-            $ib = new CIBlock;
-            $res = CIBlock::GetList(
+			$el = new CIBlockElement();
+            $arProducts = array();
+            $products = $xml->shop->offers->offer;
+
+            /*print GetMessage("CET_PROCESS_GOING");
+			print ("<br>");
+			print (GetMessage("IMPORT_MSG1") . $CUR_FILE_POS);
+			print (GetMessage("IMPORT_MSG2") . count($products));
+			print (GetMessage("IMPORT_MSG3"));*/
+
+            $isNeedPriceChange = (round(doubleval($price_modifier), 2) !== 1.00) ? true: false;
+
+            // Сформируем массив текущих товаров данного инфоблока
+            $arCurrentProds = array();
+            $resProds = CIBlockElement::GetList(
                 array(),
                 array(
-                    "=TYPE" => $IBLOCK_TYPE_ID,
-                    "IBLOCK_ID" => $IBLOCK_ID,
-                    'CHECK_PERMISSIONS' => 'Y',
-                    'MIN_PERMISSION' => 'W'
-                )
+                    "IBLOCK_ID" => $IBLOCK_ID
+                ),
+                false,
+                false,
+                array("ID", "XML_ID")
             );
+            while ($arProd = $resProds->Fetch()) {
+                $arCurrentProds[$arProd["ID"]] = $arProd["XML_ID"];
+            }
 
-            if (!$res) {
-                $strImportErrorMessage .= str_replace("#ERROR#", $ib->LAST_ERROR, str_replace("#NAME#", "[" . $IBLOCK_ID . "] \"" . $IBLOCK_NAME . "\" (" . $IBLOCK_XML_ID . ")", GetMessage("CICML_ERROR_ADDING_CATALOG"))) . ".<br>";
-                $STT_CATALOG_ERROR++;
-            } else {
-                // Начинаем обработку товаров
-                // Сначала получим все существующие свойства инфоблока, полученные ранее из импорта YML
-                $this->arYmlCatalogProps = $this->getCatalogProps($IBLOCK_ID, true);
+            for ($j = $CUR_FILE_POS; $j < count($products); $j++) {
+                $isNeedPropUpdate = true; // Нужно ли обновлять значения свойств товара
+                // устанавливаем значение до которого добрались
+                $CUR_FILE_POS = $j;
 
-				$el = new CIBlockElement();
-                $arProducts = array();
-                $products = $xml->shop->offers->offer;
+                $xProductNode = $products[$j];
 
-                print GetMessage("CET_PROCESS_GOING");
-				print ("<br>");
-				print (GetMessage("IMPORT_MSG1") . $CUR_FILE_POS);
-				print (GetMessage("IMPORT_MSG2") . count($products));
-				print (GetMessage("IMPORT_MSG3"));
+                $PRODUCT_XML_ID = $this->ymlPropPrefix . $xProductNode['id'];
+                //if ($CUR_FILE_POS == 100) break; // Debug
+                AddMessage2Log("Pos. " . $CUR_FILE_POS . ". Process prod XML_ID = " . print_r($PRODUCT_XML_ID, true));
 
-                $isNeedPriceChange = (round(doubleval($price_modifier), 2) !== 1.00) ? true: false;
+                $PRODUCT_TYPE = $xProductNode['type'];
 
-                for ($j = $CUR_FILE_POS; $j < count($products); $j++) {
-                    $isNeedPropUpdate = true; // Нужно ли обновлять значения свойств товара
-                    // устанавливаем значение до которого добрались
-                    $CUR_FILE_POS = $j;
+                // выцепляем тип товара и получаем его название
+                switch ($PRODUCT_TYPE) {
+                    case "vendor.model":
+                        $PRODUCT_NAME_UNCODED = $xProductNode->vendor . " " . $xProductNode->model;
+                        break;
 
-                    $xProductNode = $products[$j];
+                    case "book":
+                    case "audiobook":
+                        $PRODUCT_NAME_UNCODED = $xProductNode->author . " " . $xProductNode->name;
+                        break;
 
-                    $PRODUCT_XML_ID = 'yml_' . $xProductNode['id'];
+                    case "artist.title":
+                        $PRODUCT_NAME_UNCODED = $xProductNode->artist . " " . $xProductNode->title;
+                        break;
 
-                    $PRODUCT_TYPE = $xProductNode['type'];
+                    default:
+                        $PRODUCT_NAME_UNCODED = $xProductNode->name;
+                }
 
-                    // выцепляем тип товара и получаем его название
-                    switch ($PRODUCT_TYPE) {
-                        case "vendor.model":
-                            $PRODUCT_NAME_UNCODED = $xProductNode->vendor . " " . $xProductNode->model;
-                            break;
+				// $PRODUCT_NAME_UNCODED = $xProductNode->typePrefix." ".$xProductNode->model;
+                // $PRODUCT_NAME_UNCODED = $xProductNode->model;
+				// if (!isset($PRODUCT_NAME_UNCODED)) $PRODUCT_NAME_UNCODED=$xProductNode->name;
 
-                        case "book":
-                        case "audiobook":
-                            $PRODUCT_NAME_UNCODED = $xProductNode->author . " " . $xProductNode->name;
-                            break;
+				$PRODUCT_NAME = yml_iconv(trim($PRODUCT_NAME_UNCODED), $this->optEncode);
+                //$PRODUCT_NAME = trim($PRODUCT_NAME_UNCODED);
+                $prodDescription = yml_iconv((string)$xProductNode->description, $this->optEncode);
+                //$prodDescription = (string) $xProductNode->description;
 
-                        case "artist.title":
-                            $PRODUCT_NAME_UNCODED = $xProductNode->artist . " " . $xProductNode->title;
-                            break;
+				$is_import_by_filter = false;
+				$import_by_filter = array();
+				if (!empty($CAT_FILTER_I)) {
+					$import_by_filter = explode(',', $CAT_FILTER_I);
+					$is_import_by_filter = true;
+				}
 
-                        default:
-                            $PRODUCT_NAME_UNCODED = $xProductNode->name;
-                    }
-
-					// $PRODUCT_NAME_UNCODED = $xProductNode->typePrefix." ".$xProductNode->model;
-                    // $PRODUCT_NAME_UNCODED = $xProductNode->model;
-					// if (!isset($PRODUCT_NAME_UNCODED)) $PRODUCT_NAME_UNCODED=$xProductNode->name;
-
-					$PRODUCT_NAME = yml_iconv(trim($PRODUCT_NAME_UNCODED), $OPTION_ENCODING);
-                    $prodDescription = yml_iconv((string)$xProductNode->description, $OPTION_ENCODING);
-
-					$is_import_by_filter = false;
-					$import_by_filter = array();
-					if (!empty($CAT_FILTER_I)) {
-						$import_by_filter = explode(',', $CAT_FILTER_I);
-						$is_import_by_filter = true;
-					}
-
-					$is_filtreded = true;
-					if ($is_import_by_filter) {
-						$is_filtreded = false;
-						foreach ($import_by_filter as $val) {
-							if (strpos($PRODUCT_NAME, $val) !== false || strpos($prodDescription, $val) !== false) {
-								$is_filtreded = true;
-							}
+				$is_filtreded = true;
+				if ($is_import_by_filter) {
+					$is_filtreded = false;
+					foreach ($import_by_filter as $val) {
+						if (strpos($PRODUCT_NAME, $val) !== false || strpos($prodDescription, $val) !== false) {
+							$is_filtreded = true;
 						}
 					}
+				}
 
-                    $PRODUCT_XML_CAT_ID = 'yml_' . $xProductNode->categoryId;
+                $PRODUCT_XML_CAT_ID = $this->ymlPropPrefix . $xProductNode->categoryId;
 
-                    $ProductPrice = $xProductNode->price;
-					
-					// price changing
-					if ($isNeedPriceChange) {
-						$ProductPrice = $ProductPrice * doubleval($price_modifier);
-					}
+                $ProductPrice = $xProductNode->price;
+				
+				// price changing
+				if ($isNeedPriceChange) {
+					$ProductPrice = $ProductPrice * doubleval($price_modifier);
+				}
 
-                    // Обработаем свойства товара: создадим свойства инфоблока и/или значения свойств по данным этого товара
-                    $prodParams = $xProductNode->param;
-                    if ($ONLY_PRICE != 'Y' && !empty($prodParams) && !$this->isAllPropValsInOneProp) {
-                        $arProdProps = $this->processProps($prodParams);
-                        if (false === $arProdProps) {
-                            AddMessage2Log("Не удалось обработать свойства товара: " . print_r($prodParams, true));
-                        }
+                // Обработаем свойства товара: создадим свойства инфоблока и/или значения свойств по данным этого товара
+                $prodParams = $xProductNode->param;
+                if ($ONLY_PRICE != 'Y' && !empty($prodParams) && !$this->isAllPropValsInOneProp) {
+                    $arProdProps = $this->processProps($prodParams);
+                    if (false === $arProdProps) {
+                        AddMessage2Log("Не удалось обработать свойства товара: " . print_r($prodParams, true));
                     }
-					
-					if ($is_filtreded) {
-					
-						$yml_tags_array = array("vendor", "vendorCode", "country_of_origin", "sales_notes", "manufacturer_warranty", "barcode");
+                }
+				
+				if ($is_filtreded) {
+				
+					$yml_tags_array = array("vendor", "vendorCode", "country_of_origin", "sales_notes", "manufacturer_warranty", "barcode");
 
-						$more_photo = array();
-						$n = 0;
-						$p = 0;
-						
+                    $picFile = '';
+                    if ($this->isLoadPics) {
+                        $more_photo = array();
+                        $MORE_PHOTO_PROP_CODE = (empty($MORE_PHOTO_PROP_CODE)) ? 'MORE_PHOTO' : $MORE_PHOTO_PROP_CODE;
+                        //Проверим существует ли свойство MORE_PHOTO и если не сущестует, создадим его
+                        $arNewPropFields = array(
+                            'IBLOCK_ID'        => $IBLOCK_ID,
+                            'NAME'             => GetMessage("MORE_PHOTO"),
+                            'ACTIVE'           => "Y",
+                            'SORT'             => "100",
+                            'CODE'             => $MORE_PHOTO_PROP_CODE,
+                            'PROPERTY_TYPE'    => 'F',
+                            'ROW_COUNT'        => 1,
+                            'COL_COUNT'        => 30,
+                            'MULTIPLE'         => 'Y',
+                            'WITH_DESCRIPTION' => 'N',
+                            'SEARCHABLE'       => 'N',
+                            'FILTRABLE'        => 'N',
+                            'IS_REQUIRED'      => 'N',
+                            'VERSION'          => 1,
+                            'FILE_TYPE'        => 'jpg, gif, bmp, png, jpeg',
+                            'HINT'             => GetMessage("MORE_PHOTO_TOOLTIP")
+                        );
+                        if (!$NewPropID = $this->getIblockPropId($MORE_PHOTO_PROP_CODE, $IBLOCK_ID, $arNewPropFields)) {
+                            AddMessage2Log("Error create property " . $MORE_PHOTO_PROP_CODE);
+                        }
+                        $n = 0;
+                        $p = 0;
 						$count_pik = 0;
 						foreach ($xProductNode->picture as $dop_pic) {
 							$count_pik++; // Первую картинку не фигачим в дополнительные картинки - она уже в детальную ушла
@@ -433,65 +508,67 @@ class CYmlImport
 							}
 						}
 
-                        $arLoadProductArray = array(
-                            "MODIFIED_BY"		=> $USER->GetID(),
-                            "IBLOCK_SECTION"	=> $ResCatArr[$PRODUCT_XML_CAT_ID],
-                            "IBLOCK_ID"			=> $IBLOCK_ID,
-                            "NAME"				=> $PRODUCT_NAME,
-                            "XML_ID"		    => $PRODUCT_XML_ID,
-                            "ACTIVE"            => $xProductNode['available'] == 'true' ? 'Y' : 'N',
-                            "DETAIL_PICTURE"    => CFile::MakeFileArray($xProductNode->picture[0]),
-    						"PREVIEW_PICTURE"   => CFile::MakeFileArray($xProductNode->picture[0]),
-                            "DETAIL_TEXT"       => $prodDescription,
-                            "DETAIL_TEXT_TYPE"  => 'html',
-                            // получаем код товара
-                            // "CODE" => CUtil::translit(($vendor?$vendor:$PRODUCT_NAME)." ".$articul, 'ru', array()),
-    						"CODE"              => $articul,
-                        );
+                        $picFile = CFile::MakeFileArray($xProductNode->picture[0]);
+                    }
 
-					    $arLoadProductArray2 = array(
-                            "MODIFIED_BY"     => $USER->GetID(),
-                            "IBLOCK_ID"       => $IBLOCK_ID,
-                            "NAME"            => $PRODUCT_NAME,
-                            "XML_ID"          => $PRODUCT_XML_ID,
-                            "ACTIVE"          => $xProductNode['available']=='true'?'Y':'N',
-                            "DETAIL_PICTURE"  => CFile::MakeFileArray($xProductNode->picture[0]),
-    						"PREVIEW_PICTURE" => CFile::MakeFileArray($xProductNode->picture[0]),
-                            "DETAIL_TEXT"     => $prodDescription,
-    						//"IBLOCK_SECTION"	=>	$ResCatArr["".$PRODUCT_XML_CAT_ID.""],
-                        );
+                    $arLoadProductArray = array(
+                        "MODIFIED_BY"		=> $USER->GetID(),
+                        "IBLOCK_SECTION"	=> $ResCatArr[$PRODUCT_XML_CAT_ID],
+                        "IBLOCK_ID"			=> $IBLOCK_ID,
+                        "NAME"				=> $PRODUCT_NAME,
+                        "XML_ID"		    => $PRODUCT_XML_ID,
+                        "ACTIVE"            => $xProductNode['available'] == 'true' ? 'Y' : 'N',
+                        "DETAIL_PICTURE"    => $picFile,
+						"PREVIEW_PICTURE"   => $picFile,
+                        "DETAIL_TEXT"       => $prodDescription,
+                        "DETAIL_TEXT_TYPE"  => 'html',
+                        // получаем код товара
+                        // "CODE" => CUtil::translit(($vendor?$vendor:$PRODUCT_NAME)." ".$articul, 'ru', array()),
+						"CODE"              => $articul,
+                    );
 
-                        $res = CIBlockElement::GetList(
-                            array(),
-                            array(
-                                "IBLOCK_ID" => $IBLOCK_ID,
-                                "XML_ID" => $PRODUCT_XML_ID
-                            )
-                        );
-                        $bNewRecord_tmp = False;
+				    $arLoadProductArray2 = array(
+                        "MODIFIED_BY"     => $USER->GetID(),
+                        "IBLOCK_ID"       => $IBLOCK_ID,
+                        "NAME"            => $PRODUCT_NAME,
+                        "XML_ID"          => $PRODUCT_XML_ID,
+                        "ACTIVE"          => $xProductNode['available']=='true'?'Y':'N',
+                        "DETAIL_PICTURE"  => $picFile,
+						"PREVIEW_PICTURE" => $picFile,
+                        "DETAIL_TEXT"     => $prodDescription,
+						//"IBLOCK_SECTION"	=>	$ResCatArr["".$PRODUCT_XML_CAT_ID.""],
+                    );
 
-                        // флажок что все ништяк
-                        $flag_ok = 0;
+                    $bNewRecord_tmp = False;
 
-                        $PRODUCT_ID = false;
-    					// товар уже есть?
-                        if ($arr = $res->Fetch()) { // Товар с таким XML_ID уже есть
-                            $PRODUCT_ID = $arr["ID"];
+                    // флажок что все ништяк
+                    $flag_ok = 0;
 
-                            if ($ONLY_PRICE != 'Y') {
-                                // обновляем
-                                $flag_ok = $el->Update($PRODUCT_ID, $arLoadProductArray2);
-                                //fwrite($fp, "already was. updated ".$PRODUCT_XML_ID." ".$PRODUCT_NAME."\n");
+                    $PRODUCT_ID = false;
+                    if ($PRODUCT_ID = array_search($PRODUCT_XML_ID, $arCurrentProds)) {
+                        // Товар с таким XML_ID уже есть
+                        unset($arCurrentProds[$PRODUCT_ID]); // Уменьшаем массив товаров, чтобы потом меньше искать
 
-                                // уже есть такой код
+                        if ($ONLY_PRICE != 'Y') {
+                            // обновляем
+                            $flag_ok = $el->Update($PRODUCT_ID, $arLoadProductArray2);
+                            //fwrite($fp, "already was. updated ".$PRODUCT_XML_ID." ".$PRODUCT_NAME."\n");
+
+                            // уже есть такой код
+                            if (!$flag_ok) {
+                                // да жалко что ли. поменяем
+                                $arLoadProductArray["CODE"] = $arLoadProductArray["XML_ID"];
+                                // еще раз обновляй
+                                $flag_ok = $el->Update($PRODUCT_ID, $arLoadProductArray);
                                 if (!$flag_ok) {
-                                    // да жалко что ли. поменяем
-                                    $arLoadProductArray["CODE"] = $arLoadProductArray["XML_ID"];
-                                    // еще раз обновляй
-                                    $flag_ok = $el->Update($PRODUCT_ID, $arLoadProductArray);
-                                    //fwrite($fp, "code changed to xmlid ".$PRODUCT_XML_ID." ".$PRODUCT_NAME."\n");
+                                    $errorMsg = $el->LAST_ERROR;
+                                    AddMessage2Log("Error update product \"" . $PRODUCT_NAME . "\" (XML_ID = " . $PRODUCT_XML_ID . "). Error: " . $errorMsg);
+                                    echo $errorMsg;
                                 }
+                                //fwrite($fp, "code changed to xmlid ".$PRODUCT_XML_ID." ".$PRODUCT_NAME."\n");
+                            }
 
+                            if ($this->isLoadPics) {
     							$va_props = CIBlockElement::GetProperty($IBLOCK_ID, $PRODUCT_ID, array(), array("CODE" => "MORE_PHOTO"));
     							while ($pic_props = $va_props->Fetch()) {
     								if ($pic_props["VALUE"]) {
@@ -502,37 +579,43 @@ class CYmlImport
     							}
 
     							CIBlockElement::SetPropertyValueCode($PRODUCT_ID, "MORE_PHOTO", $more_photo);
-                            } else {
-    						    $flag_ok = true;
-    						}
-                        } else { // Товара c таким XML_ID пока нет
-                            if ($ONLY_PRICE != 'Y') {
-                                // добавляем
-    							$flag_ok = false;
-                                // Дополним данные свойствами товара
-                                if (isset($arProdProps) && !empty($arProdProps) && is_array($arProdProps)) {
-                                    $arLoadProductArray['PROPERTY_VALUES'] = $arProdProps;
-                                }
+                            }
+                        } else {
+						    $flag_ok = true;
+						}
+                    } else { // Товара c таким XML_ID пока нет
+                        if ($ONLY_PRICE != 'Y') {
+                            // добавляем
+							$flag_ok = false;
+                            // Дополним данные свойствами товара
+                            if (isset($arProdProps) && !empty($arProdProps) && is_array($arProdProps)) {
+                                $arLoadProductArray['PROPERTY_VALUES'] = $arProdProps;
+                            }
+                            $PRODUCT_ID = $el->Add($arLoadProductArray);
+							if ($PRODUCT_ID) {
+                                $flag_ok = true;
+                                $isNeedPropUpdate = false;
+                            }
+                            //fwrite($fp, "new record ".$PRODUCT_XML_ID." ".$PRODUCT_NAME."\n");
+
+                            // не добавился! такой код уже есть
+                            if (!$flag_ok) {
+                                // поменяли
+                                $arLoadProductArray["CODE"] = $arLoadProductArray["XML_ID"];
+                                // еще раз добавляй
                                 $PRODUCT_ID = $el->Add($arLoadProductArray);
-    							if ($PRODUCT_ID) {
+								if ($PRODUCT_ID) {
                                     $flag_ok = true;
                                     $isNeedPropUpdate = false;
+                                } else {
+                                    $errorMsg = $el->LAST_ERROR;
+                                    AddMessage2Log("Error create product \"" . $PRODUCT_NAME . "\" (XML_ID = " . $PRODUCT_XML_ID . "). Error: " . $errorMsg);
+                                    echo $errorMsg;
                                 }
-                                //fwrite($fp, "new record ".$PRODUCT_XML_ID." ".$PRODUCT_NAME."\n");
+                                //  fwrite($fp, "code changed to xmlid ".$PRODUCT_XML_ID." ".$PRODUCT_NAME."\n");
+                            }
 
-                                // не добавился! такой код уже есть
-                                if (!$flag_ok) {
-                                    // поменяли
-                                    $arLoadProductArray["CODE"] = $arLoadProductArray["XML_ID"];
-                                    // еще раз добавляй
-                                    $PRODUCT_ID = $el->Add($arLoadProductArray);
-    								if ($PRODUCT_ID) {
-                                        $flag_ok = true;
-                                        $isNeedPropUpdate = false;
-                                    }
-                                    //  fwrite($fp, "code changed to xmlid ".$PRODUCT_XML_ID." ".$PRODUCT_NAME."\n");
-                                }
-
+                            if ($this->isLoadPics) {
 							    $va_props = CIBlockElement::GetProperty($IBLOCK_ID, $PRODUCT_ID, array(), array("CODE" => "MORE_PHOTO"));
 								while ($pic_props = $va_props->Fetch()) {
 									if ($pic_props["VALUE"]) {
@@ -543,130 +626,138 @@ class CYmlImport
 								}
 
 							    CIBlockElement::SetPropertyValueCode($PRODUCT_ID, "MORE_PHOTO", $more_photo);
-
-                            } else { // Режим обновления только цен
-    							$flag_ok = true;
-    						}
-                        } // Закончили обработку товара с новым XML_ID
-
-                        if ($flag_ok) {
-                            $prodQuantity = (int) $xProductNode->catalogQuantity;
-                            if ($ONLY_PRICE != 'Y') {
-                                $arFieldsProduct = array(
-                                    "ID" => $PRODUCT_ID,
-                                    "QUANTITY" => $prodQuantity,
-                                    "CAN_BUY_ZERO" => "Y"
-                                );
-                                CCatalogProduct::Add($arFieldsProduct);
-                            } else if ($ONLY_PRICE == 'Y') {
-                                CCatalogProduct::Update($PRODUCT_ID, array('QUANTITY' => $prodQuantity));
                             }
+                        } else { // Режим обновления только цен
+							$flag_ok = true;
+						}
+                    } // Закончили обработку товара с новым XML_ID
 
-                            // Остатки по складам
-                            if ($this->isNeedStores) {
-                                foreach ($arSelStores as $storeId) {
-        						    $arFieldsSklad = array(
-        								"PRODUCT_ID" => $PRODUCT_ID,
-        								"STORE_ID" => $storeId,
-        								"AMOUNT" => $prodQuantity,
-        							);
-        						    if ($ONLY_PRICE != 'Y') {
-                                        CCatalogStoreProduct::Add($arFieldsSklad);
-                                    } else if ($ONLY_PRICE == 'Y') {
-                                        $rsStore = CCatalogStoreProduct::GetList(
-                                            array(),
-                                            array(
-                                                'PRODUCT_ID' => $PRODUCT_ID,
-                                                'STORE_ID' => $storeId
-                                            ),
-                                            false,
-                                            false,
-                                            array('ID', 'AMOUNT')
-                                        ); 
-                                        if ($arStore = $rsStore->Fetch()) {
-                                            $storeRowId = $arStore['ID'];
-                                            if ($arStore['AMOUNT'] != $prodQuantity) {
-                                                CCatalogStoreProduct::Update($storeRowId, $arFieldsSklad);
-                                            }
-                                        } else {
-                                            // По этому складу нет данных об остатках этого товара
-                                            CCatalogStoreProduct::Add($arFieldsSklad);
-                                        }
-                                    }
-                                }
-                            }
-
-                            //Обновляем базовую цену для товара
-                            $price_ok = CPrice::SetBasePrice($PRODUCT_ID, $ProductPrice, "RUB");
-
-                            ///////////////////////////////
-                            // Обновление свойств товара //
-                            ///////////////////////////////
-
-                            if ($ONLY_PRICE != 'Y') {
-                                // После того, как основная информация по товару записана, сохраняем свойства
-                                if ($this->isAllPropValsInOneProp) {
-                                    $PROPERTY_VALUE = array();
-                                    $count = 0;
-
-        							if (isset($prodParams)) {
-        								foreach ($prodParams as $param) {
-        	                                // print $param['name']."<br>";
-        									$PROPERTY_VALUE['n' . $count] = array(
-                                                'VALUE' => yml_iconv($param, $OPTION_ENCODING),
-                                                'DESCRIPTION' => yml_iconv($param['name'], $OPTION_ENCODING)
-                                            );
-        									$count++;
-        								}
-        							}
-    							
-        							foreach ($yml_tags_array as $val) {
-        								$PROPERTY_VALUE['n' . $count] = array(
-                                            'VALUE' => yml_iconv($xProductNode->$val, $OPTION_ENCODING),
-                                            'DESCRIPTION' => $val
-                                        );
-        								$count++;
-        							}
-
-                                    $ELEMENT_ID = $PRODUCT_ID;  // код элемента
-
-                                    CIBlockElement::SetPropertyValuesEx(
-                                        $ELEMENT_ID,
-                                        $IBLOCK_ID,
-                                        array($ONE_PROP_CODE => $PROPERTY_VALUE)
-                                    );
-                                } else {
-                                    if ($isNeedPropUpdate) {
-                                        // Сохраняем свойства товара в соответствующих свойствах инфоблока
-                                        foreach ($prodParams as $param) {
-                                            $paramName = (string) $param['name'];
-                                            $PROPERTY_CODE = $this->ymlPropPrefix . $this->getTranslit(trim($paramName), 'U');
-                                            $PROPERTY_VALUE = yml_iconv((string) $param, $OPTION_ENCODING);
-                                            $PROPERTY_VALUE = trim($PROPERTY_VALUE);
-                                            CIBlockElement::SetPropertyValuesEx(
-                                                $PRODUCT_ID,
-                                                $IBLOCK_ID,
-                                                array($PROPERTY_CODE => $PROPERTY_VALUE)
-                                            );
-                                        }
-                                    }
-                                }
-                            } // Конец очередной проверки, что это не режим обновления только цен
-                        } else { // Если флаг $flag_ok == false
-                            echo "\nError: " . $el->LAST_ERROR . "\n";
-                            echo $PRODUCT_XML_ID . " " . $PRODUCT_NAME . "\n\n";
-                           // fwrite($fp, "here was error ".$PRODUCT_XML_ID." ".$PRODUCT_NAME."\n");
+                    if ($flag_ok) {
+                        $prodQuantity = (int) $xProductNode->catalogQuantity;
+                        if ($ONLY_PRICE != 'Y') {
+                            $arFieldsProduct = array(
+                                "ID" => $PRODUCT_ID,
+                                "QUANTITY" => $prodQuantity,
+                                "CAN_BUY_ZERO" => "Y"
+                            );
+                            CCatalogProduct::Add($arFieldsProduct);
+                        } else if ($ONLY_PRICE == 'Y') {
+                            CCatalogProduct::Update($PRODUCT_ID, array('QUANTITY' => $prodQuantity));
                         }
-    				} // Конец блока, где флаг $is_filtreded == true
 
-                    // fclose($fp);
+                        // Остатки по складам
+                        if ($this->isNeedStores) {
+                            foreach ($arSelStores as $storeId) {
+    						    $arFieldsSklad = array(
+    								"PRODUCT_ID" => $PRODUCT_ID,
+    								"STORE_ID" => $storeId,
+    								"AMOUNT" => $prodQuantity,
+    							);
+    						    if ($ONLY_PRICE != 'Y') {
+                                    CCatalogStoreProduct::Add($arFieldsSklad);
+                                } else if ($ONLY_PRICE == 'Y') {
+                                    $rsStore = CCatalogStoreProduct::GetList(
+                                        array(),
+                                        array(
+                                            'PRODUCT_ID' => $PRODUCT_ID,
+                                            'STORE_ID' => $storeId
+                                        ),
+                                        false,
+                                        false,
+                                        array('ID', 'AMOUNT')
+                                    ); 
+                                    if ($arStore = $rsStore->Fetch()) {
+                                        $storeRowId = $arStore['ID'];
+                                        if ($arStore['AMOUNT'] != $prodQuantity) {
+                                            CCatalogStoreProduct::Update($storeRowId, $arFieldsSklad);
+                                        }
+                                    } else {
+                                        // По этому складу нет данных об остатках этого товара
+                                        CCatalogStoreProduct::Add($arFieldsSklad);
+                                    }
+                                }
+                            }
+                        }
 
-                    // если таймер закончился, $bAllLinesLoaded = false
-                    if (!($bAllLinesLoaded = $this->CSVCheckTimeout($max_execution_time))) {
-                        break;
-    				}
-                } // Закончился цикл по товарам
-            } // Конец проверки, что инфоблок доступен для редактирования
+                        //Обновляем базовую цену для товара
+                        $price_ok = CPrice::SetBasePrice($PRODUCT_ID, $ProductPrice, "RUB");
+
+                        ///////////////////////////////
+                        // Обновление свойств товара //
+                        ///////////////////////////////
+
+                        if ($ONLY_PRICE != 'Y') {
+                            // После того, как основная информация по товару записана, сохраняем свойства
+                            if ($this->isAllPropValsInOneProp) {
+                                $PROPERTY_VALUE = array();
+                                $count = 0;
+
+    							if (isset($prodParams)) {
+    								foreach ($prodParams as $param) {
+    	                                // print $param['name']."<br>";
+    									$PROPERTY_VALUE['n' . $count] = array(
+                                            'VALUE' => yml_iconv($param, $this->optEncode),
+                                            'DESCRIPTION' => yml_iconv($param['name'], $this->optEncode)
+                                        );
+                                        //$PROPERTY_VALUE['n' . $count] = array(
+                                        //    'VALUE' => (string) $param,
+                                        //    'DESCRIPTION' => (string) $param['name']
+                                        //);
+    									$count++;
+    								}
+    							}
+							
+    							foreach ($yml_tags_array as $val) {
+    								$PROPERTY_VALUE['n' . $count] = array(
+                                        'VALUE' => yml_iconv($xProductNode->$val, $this->optEncode),
+                                        //'VALUE' => (string) $xProductNode->$val,
+                                        'DESCRIPTION' => $val
+                                    );
+    								$count++;
+    							}
+
+                                $ELEMENT_ID = $PRODUCT_ID;  // код элемента
+
+                                CIBlockElement::SetPropertyValuesEx(
+                                    $ELEMENT_ID,
+                                    $IBLOCK_ID,
+                                    array($ONE_PROP_CODE => $PROPERTY_VALUE)
+                                );
+                            } else {
+                                if ($isNeedPropUpdate) {
+                                    // Сохраняем свойства товара в соответствующих свойствах инфоблока
+                                    foreach ($prodParams as $param) {
+                                        $paramName = (string) $param['name'];
+                                        $PROPERTY_CODE = $this->ymlPropPrefix . $this->getTranslit(trim($paramName), 'U');
+                                        $PROPERTY_VALUE = yml_iconv((string) $param, $this->optEncode);
+                                        //$PROPERTY_VALUE = (string) $param;
+                                        $PROPERTY_VALUE = trim($PROPERTY_VALUE);
+                                        CIBlockElement::SetPropertyValuesEx(
+                                            $PRODUCT_ID,
+                                            $IBLOCK_ID,
+                                            array($PROPERTY_CODE => $PROPERTY_VALUE)
+                                        );
+                                    }
+                                }
+                            }
+                        } // Конец очередной проверки, что это не режим обновления только цен
+                    } else { // Если флаг $flag_ok == false
+                        echo "\nError: " . $el->LAST_ERROR . "\n";
+                        echo $PRODUCT_XML_ID . " " . $PRODUCT_NAME . "\n\n";
+                       // fwrite($fp, "here was error ".$PRODUCT_XML_ID." ".$PRODUCT_NAME."\n");
+                    }
+				} // Конец блока, где флаг $is_filtreded == true
+
+                // fclose($fp);
+
+
+                //TODO раскомментить, если сделаем обработку $this->FILE_POS
+                // если таймер закончился, $bAllLinesLoaded = false
+                /*if (!($bAllLinesLoaded = $this->CSVCheckTimeout($max_execution_time))) {
+                    break;
+				}*/
+            } // Закончился цикл по товарам
+            //echo GetMessage("SUCCESS_IMPORT_PRODS") . PHP_EOL;
         } // Конец начальной проверки на наличие ошибок
 
         // не успели закончить до таймера
@@ -739,7 +830,6 @@ class CYmlImport
                 }
             }
         }
-        //AddMessage2Log('$arResult = ' . print_r($arResult, true));
 
         return $arResult;
     }
@@ -758,7 +848,8 @@ class CYmlImport
             $arProdProps = array();
             foreach ($prodParams as $param) {
                 $paramName = (string) $param['name'];
-                $paramValue = yml_iconv((string) $param, $OPTION_ENCODING);
+                $paramValue = yml_iconv((string) $param, $this->isNeedIconv);
+                //$paramValue = (string) $param;
                 $paramCode = $this->ymlPropPrefix . $this->getTranslit($paramName, 'U');
                 if (filter_var($paramValue, FILTER_VALIDATE_FLOAT) !== false ||
                     filter_var($paramValue, FILTER_VALIDATE_INT) !== false) {
@@ -926,6 +1017,39 @@ class CYmlImport
         }
 
         return $arResult;
+    }
+
+
+    /**
+     * Метод создаёт свойство инфоблока, если такого ещё не создано
+     * @param string $propCode Символьный код свойства
+     * @param integer $iblockId Идентификатор инфоблока
+     * @param array $propData МАссив данных для создания свойства
+     * 
+     * @return mixed Идентификатор свойства или ЛОЖЬ в случае ошибки создания свойства или определения его идентификатора
+     */
+    public function getIblockPropId($propCode, $iblockId, $propData)
+    {
+        $properties = CIBlockProperty::GetList(
+            array(),
+            array(
+                "IBLOCK_ID" => $iblockId,
+                "CODE" => $propCode
+            )
+        );
+        if ($arPropData = $properties->GetNext()) {
+            return $arPropData['ID'];
+        } else {            
+            $Newibp = new CIBlockProperty;
+            if ($NewPropID = $Newibp->Add($propData)) {
+                return $NewPropID;
+            } else {
+                AddMessage2Log("Error create property " . $propCode);
+                return false;
+            }
+        }
+
+        return false;
     }
 
 } // End of Class
