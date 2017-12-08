@@ -21,6 +21,18 @@
   * "Префикс для импортируемых свойств";
   * "Склады, в которые подгружать остатки".
 
+## Начало работы с модулем
+
+Клонировать репозиторий в папку проекта `bitrix/modules`, для этого в консоли выполнить:
+
+```bash
+# Например:
+cd ~/bitrix.local/public_html/bitrix/modules/
+git clone https://github.com/denisnovikov/bitrix_yml_import.git ./bedrosova.ymlimport/
+```
+
+Дальнейшие действия можно [посмотреть на канале](https://www.youtube.com/watch?v=w5rGb8ATsig) автора.
+
 ## Минимальные требования
 
 * PHP 5.5
