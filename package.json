@@ -1,0 +1,10 @@
+{
+  "name": "bitrix_yml_import",
+  "version": "1.0.0",
+  "description": "Модуль позволяет импортировать данные по товарам и разделам из XML выгрузок в формате YML в определённый инфоблок",
+  "main": "install/index.php",
+  "repository": "git@github.com:denisnovikov/bitrix_yml_import.git",
+  "author": "Bedrosova Yulia",
+  "license": "MIT",
+  "private": true
+}
